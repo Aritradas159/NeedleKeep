@@ -1,0 +1,34 @@
+{
+  "report": "RecallGuard-KV automated core verification",
+  "checks": [
+    {
+      "test": "Core module import",
+      "status": "PASS",
+      "detail": "<module 'recallguard_core_automated_test' from '/content/recallguard-kv-repo/code/recallguard_core.py'>"
+    },
+    {
+      "test": "eager_attn context manager",
+      "status": "PASS",
+      "detail": "enters, exits, and restores after exceptions"
+    },
+    {
+      "test": "Reproduce saved case truths",
+      "status": "PASS",
+      "detail": "24/24 FULL reference truths reproduced from fresh_seed_stretch_comparison.csv"
+    },
+    {
+      "test": "SNAP selector and compressed-cache generation",
+      "status": "PASS",
+      "detail": {
+        "original_positions": 2060,
+        "retained_positions": 48,
+        "question_tokens": 16,
+        "cache_after_question": 64,
+        "cache_after_one_token": 65,
+        "original_cache_unchanged": true,
+        "attention_setting_restored": true
+      }
+    }
+  ],
+  "passed": true
+}

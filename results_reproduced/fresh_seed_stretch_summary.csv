@@ -1,0 +1,6 @@
+policy,cases,strict_correct,strict_accuracy_pct,strict_95CI_low,strict_95CI_high,exact_correct,exact_accuracy_pct,mean_positions,mean_kv_mib,mean_kv_saved_vs_full_pct,mean_selector_seconds,mean_continuation_seconds,mean_prefill_seconds,mean_peak_delta_mib
+full,24,14,58.33,38.83,75.53,14,58.33,3091.5,36.229,0.0,0.0,1.567,1.373,1450.093
+snap_bnd,24,16,66.67,46.71,82.03,20,83.33,96.0,1.125,96.48,0.323,1.456,1.314,1449.713
+snap_w16,24,9,37.5,21.16,57.29,12,50.0,96.0,1.125,96.48,0.052,1.467,1.31,1449.713
+recent,24,0,0.0,0.0,13.8,0,0.0,96.0,1.125,96.48,0.0,1.456,1.309,1449.713
+stream4,24,1,4.17,0.74,20.24,1,4.17,96.0,1.125,96.48,0.0,1.467,1.308,1449.713

@@ -1,0 +1,5 @@
+method,paired_cases,method_correct_full_wrong,full_correct_method_wrong,both_correct,both_wrong
+snap_bnd,24,5,3,11,5
+snap_w16,24,3,8,6,7
+recent,24,0,14,0,10
+stream4,24,1,14,0,9

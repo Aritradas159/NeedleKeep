@@ -1,0 +1,5 @@
+comparison,paired_cases,snap_bnd_only_correct,other_only_correct,both_correct,both_wrong,accuracy_difference_pp
+snap_bnd vs snap_w16,24,9,2,7,6,29.17
+snap_bnd vs recent,24,16,0,0,8,66.67
+snap_bnd vs stream4,24,16,1,0,7,62.5
+snap_bnd vs full,24,5,3,11,5,8.33
