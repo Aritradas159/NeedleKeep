@@ -1,105 +1,227 @@
-# RecallGuard-KV
+# NeedleKeep
+### Keep the context that matters.
 
-**Question-aware KV-cache selection using sentence-boundary-aware spans for long-context recall.**
+**Sentence-Boundary-Aware KV-Cache Selection for Efficient LLM Inference**
+
+NeedleKeep is an experimental KV-cache selection approach that prioritizes sentence-boundary-aware context retention to reduce the amount of key-value (KV) cache retained during long-context language model inference.
+
+Instead of retaining every token or selecting tokens using a simple fixed-window strategy, NeedleKeep's **SNAP-BND** approach aims to preserve useful context by respecting sentence boundaries.
+
+> **Core idea:** Retain a smaller, structured subset of the context while evaluating how well the model preserves answer accuracy.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Problem Statement](#problem-statement)
+- [How It Works](#how-it-works)
+- [Benchmark Results](#benchmark-results)
+- [Experimental Setup](#experimental-setup)
+- [Repository Structure](#repository-structure)
+- [Reproduce the Experiments](#reproduce-the-experiments)
+- [Verification](#verification)
+- [Limitations](#limitations)
+- [Future Work](#future-work)
+- [Acknowledgements](#acknowledgements)
+
+---
 
 ## Overview
 
-RecallGuard-KV explores whether selecting a small subset of a language model's
-key-value (KV) cache can preserve factual recall in long contexts. The proposed
-variation, **SNAP-BND**, selects question-relevant cache positions while
-respecting sentence boundaries.
+Large language models use a key-value cache to store intermediate attention states during inference. This cache helps avoid recomputing previous tokens, but its memory requirements grow with context length.
 
-Model: `Qwen/Qwen2.5-0.5B-Instruct`.
+NeedleKeep investigates whether a sentence-boundary-aware selection strategy can retain substantially less KV-cache data while preserving task performance.
 
-## Method and benchmark
+The project compares SNAP-BND against four policies:
 
-The fresh-seed comparison contains 120 records: 24 cases for each of five
-policies. The small synthetic recall task uses contexts of 112 or 224 sentences,
-four seeds (3000–3003), and three query types (identifier, manager, and budget).
+- **Full:** Retain the full context.
+- **SNAP-BND:** Sentence-boundary-aware selection.
+- **SNAP-W16:** Fixed-window selection baseline.
+- **Recent:** Retain the most recent context.
+- **Stream4:** Simplified streaming-style baseline.
 
-All compressed policies in this comparison retain 96 cache positions before
-the question is processed. FULL is the uncompressed reference.
+The implementation includes benchmark scripts, core verification, experiment outputs, and a notebook for exploring the approach.
 
-- **FULL:** retain the original KV cache.
-- **SNAP-BND:** question-aware, sentence-boundary-aware selection.
-- **SNAP-W16:** question-aware selection using 16-token spans.
-- **Recent-96:** retain the most recent 96 positions.
-- **Streaming-style (4 + 92):** retain the first four sink positions and the
-  latest 92 positions. This is a simplified, post-prefill baseline, not the
-  official online StreamingLLM implementation.
+## Problem Statement
 
-### Scoring
+As prompts grow longer, KV-cache memory can become a constraint on inference efficiency. However, removing context indiscriminately can discard information needed to answer a query correctly.
 
-`exact` means the expected value is found by a boundary-aware regular
-expression in the first line of the generated answer. `strict` requires an
-exact match and excludes answers whose first line contains a known decoy value.
-These metrics are not interchangeable.
+NeedleKeep explores the following question:
 
-## Fresh-seed results
+**Can sentence-boundary-aware KV-cache selection reduce retained cache memory while maintaining useful answer accuracy?**
 
-| Policy | Strict accuracy | Strict 95% Wilson interval | Exact accuracy | Mean retained positions | Mean KV size (MiB) | Reported mean KV savings | Mean selector time (s) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| FULL | 14/24 (58.33%) | 38.83–75.53% | 14/24 (58.33%) | 3091.5 | 36.229 | 0.00% | 0.000 |
-| SNAP-BND | 16/24 (66.67%) | 46.71–82.03% | 20/24 (83.33%) | 96.0 | 1.125 | 96.48% | 0.355 |
-| SNAP-W16 | 9/24 (37.50%) | 21.16–57.29% | 12/24 (50.00%) | 96.0 | 1.125 | 96.48% | 0.056 |
-| Recent-96 | 0/24 (0.00%) | 0.00–13.80% | 0/24 (0.00%) | 96.0 | 1.125 | 96.48% | 0.000 |
-| Streaming-style (4 + 92) | 1/24 (4.17%) | 0.74–20.24% | 1/24 (4.17%) | 96.0 | 1.125 | 96.48% | 0.000 |
+The evaluation focuses on strict answer correctness, exact-match accuracy, retained-cache estimates, selector overhead, and inference timing.
 
-The summary CSV reports **96.48% mean retained-KV savings** for the compressed
-policies. This is a measure of stored KV-cache size, not peak GPU-memory savings.
+## How It Works
 
-SNAP-BND achieved 16/24 strict-correct cases (66.67%), compared with 14/24
-(58.33%) for FULL. The 95% Wilson intervals overlap, and this small benchmark
-does not establish that SNAP-BND is generally more accurate than FULL.
-SNAP-BND's exact accuracy was 20/24 (83.33%); this is a different scoring metric
-from strict accuracy.
+At a high level, the experiment follows this workflow:
 
-## Memory and latency limitations
+1. **Prepare the context:** Construct benchmark examples with different context lengths and query types.
+2. **Select context positions:** Apply a cache-retention policy to determine which positions to retain.
+3. **Run inference:** Evaluate the language model using the selected context.
+4. **Score the response:** Measure strict correctness and exact-match accuracy.
+5. **Compare efficiency:** Track retained KV-cache estimates and timing metrics across policies.
 
-Compression is performed after the full context cache has been created.
-Therefore, these experiments demonstrate a reduction in the **retained KV cache**,
-not a reduction in the peak memory needed to prefill the complete context.
+SNAP-BND is compared with the full-context policy and simpler selection baselines under the same benchmark cases.
 
-The recorded mean `peak_delta_mib` is approximately 1450.718 MiB for every
-policy. These results do not demonstrate peak GPU-memory savings. Mean prefill
-times are also similar across policies. SNAP-BND's mean selector time is
-approximately 0.355 seconds, compared with 0.056 seconds for SNAP-W16.
+## Benchmark Results
+
+The benchmark used **120 records**, with 24 records per policy across five policies.
+
+### Strict answer accuracy
+
+| Policy | Correct | Accuracy |
+|---|---:|---:|
+| Full | 14/24 | 58.33% |
+| **SNAP-BND** | **16/24** | **66.67%** |
+| SNAP-W16 | 9/24 | 37.50% |
+| Recent | 0/24 | 0.00% |
+| Stream4 | 1/24 | 4.17% |
+
+### Exact-match accuracy
+
+| Policy | Exact matches | Accuracy |
+|---|---:|---:|
+| Full | 14/24 | 58.33% |
+| **SNAP-BND** | **20/24** | **83.33%** |
+| SNAP-W16 | 12/24 | 50.00% |
+| Recent | 0/24 | 0.00% |
+| Stream4 | 1/24 | 4.17% |
+
+### Retained KV-cache estimate
+
+| Metric | Full | Selection policies |
+|---|---:|---:|
+| Mean retained positions | 3,091.5 | 96 |
+| Mean estimated KV-cache | 36.229 MiB | 1.125 MiB |
+| Estimated cache reduction vs. full | — | 96.48% |
+
+The estimated reduction is in **retained KV-cache memory**, not total GPU memory consumption.
+
+### What these results suggest
+
+- SNAP-BND achieved higher strict and exact-match accuracy than the full-context baseline in this benchmark run.
+- The selection policies retained substantially fewer positions than the full-context policy.
+- SNAP-BND had a mean selector time of approximately **0.355 seconds**, compared with approximately **0.056 seconds** for SNAP-W16.
+- The results motivate further evaluation on larger and more diverse workloads.
+
+**Important:** The benchmark contains only 24 records per policy. The reported accuracy difference does not establish statistically significant superiority or guarantee similar performance on other models and datasets.
+
+## Experimental Setup
+
+| Component | Configuration |
+|---|---|
+| Model | `Qwen/Qwen2.5-0.5B-Instruct` |
+| Benchmark size | 120 records |
+| Policies | Full, SNAP-BND, SNAP-W16, Recent, Stream4 |
+| Records per policy | 24 |
+| Random seeds | 3000–3003 |
+| Context lengths | 112 and 224 |
+| Query types | `id`, `mgr`, `bud` |
+| Selection-policy budget | 96 retained positions |
+| Reproduced run | 120/120 records completed |
+
+The benchmark also records paired comparisons and a SNAP-BND ablation output. See the CSV files in `results_reproduced/` for the detailed results.
+
+## Repository Structure
+
+```text
+NeedleKeep/
+├── README.md
+├── verification_report.json
+├── code/
+│   ├── recallguard_core.py
+│   ├── run_benchmark.py
+│   └── verify_core.py
+├── notebooks/
+│   └── RecallGuard-KV-experiment.ipynb
+└── results_reproduced/
+    ├── fresh_seed_stretch_comparison.csv
+    ├── fresh_seed_stretch_summary.csv
+    ├── fresh_seed_paired_comparisons.csv
+    └── fresh_seed_snap_ablation.csv
+```
+
+The Python filenames and notebook retain some of their original RecallGuard-KV names from the project's development stage.
+
+## Reproduce the Experiments
+
+### Requirements
+
+- Python 3
+- The dependencies required by the benchmark implementation
+- Access to the Hugging Face model `Qwen/Qwen2.5-0.5B-Instruct`
+- A compatible runtime with sufficient memory for model inference
+
+### Steps
+
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/Aritradas159/NeedleKeep.git
+   cd NeedleKeep
+   ```
+
+2. Review the implementation and install the required dependencies for your environment.
+
+3. Run the core verification:
+
+   ```bash
+   python code/verify_core.py
+   ```
+
+4. Run the benchmark:
+
+   ```bash
+   python code/run_benchmark.py
+   ```
+
+Check the script's configuration and output paths before running it. Model downloads, dependency versions, hardware, and runtime configuration may affect execution and timing.
+
+The `results_reproduced/` directory contains the saved benchmark outputs from the reproduced run.
 
 ## Verification
 
-`code/verify_core.py` contains automated checks for core import, attention-setting
-restoration, saved case-truth reproduction, and compressed-cache generation.
+The core verification report records **four checks passed and zero failures**.
 
-The recorded verification passed all four checks. Its cache-generation smoke
-test retained 48 positions; that is a separate functional test, not the
-96-position setting used in the fresh-seed benchmark.
+The benchmark was also reproduced on a Google Colab T4 runtime, completing all 120 records. The reproduced run matched the original run's case-policy coverage and strict and exact correctness counts, although the generated answer text differed.
 
-## Project files
+This supports reproducibility of the reported scores under the tested setup, not deterministic reproduction of every generated response.
 
-- `code/recallguard_core.py` — model loading, selectors, baselines, and evaluation helpers.
-- `code/verify_core.py` — automated core verification checks.
-- `results/fresh_seed_stretch_comparison.csv` — per-case benchmark results.
-- `results/fresh_seed_stretch_summary.csv` — aggregate accuracy, cache, and timing metrics.
-- `results/fresh_seed_paired_comparisons.csv` — paired strict-correctness comparisons.
-- `results/fresh_seed_snap_ablation.csv` — SNAP-BND comparisons against the other methods.
-- `verification_report.json` — result of the automated verification.
-- `notebooks/RecallGuard-KV-experiment.ipynb` — experiment notebook, when available.
-
-The Colab experiment notebook used for the benchmark is included at `notebooks/RecallGuard-KV-experiment.ipynb`. It contains experiment cells; review the notebook before rerunning resource-intensive cells.
-
-## Reproducibility notes
-
-The core file is extracted from the executed Colab notebook. The verification
-function expects an already-loaded `model` and `tokenizer`; it is not a
-standalone command-line runner. Full benchmark execution requires running the
-appropriate notebook cells and can be resource-intensive.
+See [`verification_report.json`](verification_report.json) for the core verification details.
 
 ## Limitations
 
-- The benchmark is small, synthetic, and uses one 0.5B model.
-- FULL itself is imperfect on these recall cases.
-- The confidence intervals are wide and overlap for SNAP-BND and FULL.
-- SNAP-BND is question-aware; Recent-96 and the streaming-style baseline are
-  question-blind.
-- The reported cache-size savings should not be presented as peak VRAM savings.
-- Results support conclusions about this benchmark only, not general model quality.
+NeedleKeep is an experimental prototype, and the current results have important limitations:
+
+- The evaluation uses a small benchmark with 24 records per policy.
+- The model tested is `Qwen/Qwen2.5-0.5B-Instruct`; results may differ for larger models.
+- The estimated KV-cache reduction is not equivalent to a measured reduction in peak GPU memory.
+- Selector overhead may offset some of the benefits in latency-sensitive workloads.
+- Stream4 is a simplified streaming-style baseline, not a faithful implementation of the official StreamingLLM method.
+- The benchmark's H2O-style baseline, where applicable in the development code, should not be treated as a faithful official H2O implementation.
+- Broader datasets, longer contexts, additional architectures, and stronger statistical evaluation are needed.
+
+These limitations are important when interpreting the benchmark numbers.
+
+## Future Work
+
+Potential next steps include:
+
+- Evaluate on larger language models and longer contexts.
+- Expand the benchmark with more tasks, records, and random seeds.
+- Measure actual peak memory usage and end-to-end latency.
+- Compare against faithful implementations of established KV-cache methods.
+- Investigate the trade-off between selection overhead, retained memory, and answer quality.
+- Improve experiment automation and configuration management.
+
+## Acknowledgements
+
+Built as an experimental project for exploring efficient language-model inference and KV-cache selection.
+
+**Repository:** [Aritradas159/NeedleKeep](https://github.com/Aritradas159/NeedleKeep)
+
+---
+
+*NeedleKeep — Keep the context that matters.*
